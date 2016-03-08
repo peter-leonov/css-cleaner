@@ -36,7 +36,7 @@ function catchMoreRules () {
   var used =
     $allRules
     .filter(s => !seenRules.get(s))
-    .filter(s => (console.log(s.selector), document.querySelector(s.selector)))
+    .filter(s => document.querySelector(s.selector))
     .each(s => seenRules.set(s, true))
   $snapshots.push(used)
   console.log('added', used.length)

@@ -10,43 +10,48 @@ function getAllRules () {
     .map(r => r.type == 4 ? Array.from(r.cssRules) : r)
     .flatten()
     .filter(r => r.type == 1)
+    .map(r => {
+      var effectiveSelector = r.selectorText.replace(/::?(?:[\w-]+)(?:\(.*?\))?/g, "")
+      try {
+        // try use maybe corrupted effective selector
+        document.querySelector(effectiveSelector)
+      } catch (e) {
+        console.log('corrupted effective selector', [effectiveSelector], ' of original ', [r.selectorText],', error:', e)
+        console.log('full rule is:', r.cssText)
+        // better take the original than loose both
+        return {rule: r, selector: r.selectorText}
+      }
+      // cutting preudos went well, use effective selector
+      return {rule: r, selector: effectiveSelector}
+    })
+
 }
+var $allRules = getAllRules()
+
+var $snapshots = []
 
 var seenRules = new Map()
-var allRules = getAllRules()
-
-function getUsedRules () {
-  var pseudoSelectorRegexp = /::?(?:[\w-]+)(?:\(.*?\))?/g;
-
-  return allRules
-    .filter(r => seenRules.get(r))
-    .filter(r => {
-      console.log(123)
-      var selector = r.selectorText
-      var effectiveSelector = selector.replace(pseudoSelectorRegexp, "")
-      try {
-        // try use maybe corrupted selector
-        if (document.querySelector(effectiveSelector))
-          return true
-      } catch (e) {
-        // console.log('corrupted effective selector', [effectiveSelector], ' of original ', [selector],', error:', e)
-        // console.log('full rule is:', r.cssText)
-        // better take one than loose
-        return true
-      }
-      return document.querySelector(selector)
-    })
-}
-
-// rulesTree[file_name][media_query][selector] = rule
-// {}{}[]
-var rulesTree = Object.create(null)
-
 function catchMoreRules () {
   console.log('adding rules…')
-  var was = seenRules.size
-  getUsedRules()
-    .filter(r => seenRules.get(r) ? false : (seenRules.set(r, true), true))
+  var used =
+    $allRules
+    .filter(s => !seenRules.get(s))
+    .filter(s => (console.log(s.selector), document.querySelector(s.selector)))
+    .each(s => seenRules.set(s, true))
+  $snapshots.push(used)
+  console.log('added', used.length)
+}
+
+
+function packRules () {
+  console.log('packing rules…')
+
+  // rulesTree[file_name][media_query][selector] = rule
+  // {}{}[]
+  var rulesTree = Object.create(null)
+  $snapshots
+    .flatten()
+    .map(s => s.rule)
     .each(r => {
       var fileHref = r.parentStyleSheet.href || '.'
       var file = rulesTree[fileHref] // external or local style tag
@@ -63,11 +68,14 @@ function catchMoreRules () {
 
       media.push(r)
     })
-  console.log('added', seenRules.size - was)
+  console.log('packed')
+  return rulesTree
 }
 
 function downloadRules ()
 {
+  var rulesTree = packRules()
+
   function downloadURI(uri, name) {
     var link = document.createElement("a");
     link.download = name;

@@ -1,5 +1,7 @@
 // based on AuditRules.js from Chrome Dev Tools
 
+// TODO: remove (rule.parent.remove(rule)) unused rules type 1 from CSSStyleSHeet and then serialize all the document.styleSheets
+
 !function () {
 
 function getAllRules () {
@@ -113,5 +115,13 @@ window.addEventListener('keypress', e => {
   else if (e.code == 'KeyS')
     downloadRules()
 })
+
+new MutationObserver(function(mutations) {
+  catchMoreRules()
+}).observe(document, { childList: true, attributes: true, subtree: true });
+
+// new MutationObserver(function(mutations) {
+//   console.log(mutations[0])
+// }).observe(document.documentElement, { childList: true, attributes: true, subtree: true });
 
 }()

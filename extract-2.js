@@ -1,83 +1,106 @@
 // based on AuditRules.js from Chrome Dev Tools
 
-// TODO: remove (rule.parent.remove(rule)) unused rules type 1 from CSSStyleSHeet and then serialize all the document.styleSheets
+// sorry for the PHP-style code, I promise to use functional programming next time ;)
 
 !function () {
 
-function getAllRules () {
-  return Array.from(document.styleSheets)
-    .map(sheet => sheet.cssRules)
-    .map(rules => rules ? Array.from(rules) : [])
-    .flatten()
-    .map(r => r.type == 4 ? Array.from(r.cssRules) : r)
-    .flatten()
-    .filter(r => r.type == 1)
-    .map(r => {
-      var effectiveSelector = r.selectorText.replace(/::?(?:[\w-]+)(?:\(.*?\))?/g, "")
+function walkRules (rules) {
+  var result = []
+  if (!rules)
+    return result
+  for (var i = 0; i < rules.length; i++) {
+    var rule = rules[i]
+    if (rule.type == 4) {
+      result = result.concat(walkRules(rule.cssRules))
+      continue
+    }
+    result.push(rule)
+  }
+  return result
+}
+
+var $allRulesOfAllTypes =
+  Array.from(document.styleSheets)
+  .map(sheet => walkRules(sheet.cssRules))
+  .flatten() // replace with reduce for production
+
+var $allStyleRules = $allRulesOfAllTypes.filter(r => r.type == 1)
+
+var $usedRules = new Map()
+function markAsUsed (rule) {
+  $usedRules.set(rule, true)
+}
+function isUsed (rule) {
+  return $usedRules.get(rule)
+}
+
+function getEffectiveRules () {
+  return $allStyleRules
+    .map(rule => {
+      var effectiveSelector = rule.selectorText.replace(/::?(?:[\w-]+)(?:\(.*?\))?/g, "")
       try {
         // try use maybe corrupted effective selector
         document.querySelector(effectiveSelector)
       } catch (e) {
-        console.log('corrupted effective selector', [effectiveSelector], ' of original ', [r.selectorText],', error:', e)
-        console.log('full rule is:', r.cssText)
-        // better take the original than loose both
-        return {rule: r, selector: r.selectorText}
+        console.log('corrupted effective selector', [effectiveSelector], ' of original ', [rule.selectorText],', error:', e)
+        console.log('full rule is:', rule.cssText)
+        // better mark the original as used than loose it
+        markAsUsed(rule)
+        return null
       }
       // cutting preudos went well, use effective selector
-      return {rule: r, selector: effectiveSelector}
+      return {rule: rule, selector: effectiveSelector}
     })
+    .filter(rule => rule) // remove nulls
 
 }
-var $allRules = getAllRules()
+var $effectiveRules = getEffectiveRules()
 
 var $snapshots = []
 
-var seenRules = new Map()
+var seenEffectiveRules = new Map()
 function catchMoreRules () {
   console.log('adding rules…')
   var used =
-    $allRules
-    .filter(s => !seenRules.get(s))
+    $effectiveRules
+    .filter(s => !seenEffectiveRules.get(s))
     .filter(s => document.querySelector(s.selector))
-    .each(s => seenRules.set(s, true))
+    .each(s => seenEffectiveRules.set(s, true))
   $snapshots.push(used)
   console.log('added', used.length)
 }
 
 
-function packRules () {
-  console.log('packing rules…')
-
-  // rulesTree[file_name][media_query][selector] = rule
-  // {}{}[]
-  var rulesTree = Object.create(null)
+function gcRules () {
+  console.log('GCing rules…')
   $snapshots
     .flatten()
     .map(s => s.rule)
-    .each(r => {
-      var fileHref = r.parentStyleSheet.href || '.'
-      var file = rulesTree[fileHref] // external or local style tag
-      if (!file)
-        file = rulesTree[fileHref] = Object.create(null)
+    .each(rule => markAsUsed(rule))
 
-      var mediaText = ''
-      if (r.parentRule && r.parentRule.type == 4) // sits in a media query rule
-        mediaText = r.parentRule.media.mediaText
-      // return '@media(' + r.parentRule.media.mediaText + '){ ' + r.cssText + ' }'
-      var media = file[mediaText]
-      if (!media)
-        media = file[mediaText] = []
-
-      media.push(r)
+  $allStyleRules.each(rule => {
+    if (isUsed(rule))
+      return
+    if (!rule.parentStyleSheet) // already deleted
+      return
+    rule.parentStyleSheet.removeRule(rule)
+  })
+  console.log('GCed')
+}
+function renderRules () {
+  var css = ''
+  Array.from(document.styleSheets).each(ss => {
+    css += '/* ' + (ss.href || '.') +' */\n'
+    Array.from(ss.cssRules || []).each(rule => {
+      css += rule.cssText + '\n'
     })
-  console.log('packed')
-  return rulesTree
+    css += '\n'
+  })
+  return css
 }
 
 function downloadRules ()
 {
-  var rulesTree = packRules()
-
   function downloadURI(uri, name) {
     var link = document.createElement("a");
     link.download = name;
@@ -86,23 +109,8 @@ function downloadRules ()
   }
 
   console.log('download rules')
-  var css = ''
-  for (var fileName in rulesTree) {
-    var file = rulesTree[fileName]
-    css += '/* ' + fileName + ' */\n'
-    for (var mediaName in file) {
-      var media = file[mediaName]
-      var rules = media.map(r => r.cssText)
-      if (mediaName == '') {
-        css += rules.join('\n') + '\n'
-      } else {
-        css += '@media ' + mediaName + ' {\n'
-        css += '  ' + rules.join('\n  ') + '\n'
-        css += '}\n'
-      }
-    }
-    css += '\n\n'
-  }
+  gcRules()
+  var css = renderRules()
   downloadURI('data:text/css,' + escape(css), 'style.css')
 }
 

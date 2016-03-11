@@ -10,11 +10,11 @@ function walkRules (rules) {
     return result
   for (var i = 0; i < rules.length; i++) {
     var rule = rules[i]
+    result.push(rule)
     if (rule.type == 4) {
-      result = result.concat(walkRules(rule.cssRules))
+      result = result.concat(walkRules(Array.from(rule.cssRules)))
       continue
     }
-    result.push(rule)
   }
   return result
 }

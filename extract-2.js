@@ -90,7 +90,7 @@ function gcRules () {
       console.log('cant find rule in parent', rule, parent)
       return
     }
-    parent.deleteRule(rule)
+    parent.deleteRule(index)
   })
   console.log('GCed')
 }

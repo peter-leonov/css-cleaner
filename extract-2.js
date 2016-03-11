@@ -81,9 +81,16 @@ function gcRules () {
   $allStyleRules.each(rule => {
     if (isUsed(rule))
       return
-    if (!rule.parentStyleSheet) // already deleted
+    var parent = rule.parentRule || rule.parentStyleSheet
+    if (!parent) // already deleted
       return
-    rule.parentStyleSheet.removeRule(rule)
+    var index = Array.from(parent.cssRules).indexOf(rule)
+    if (index == -1)
+    {
+      console.log('cant find rule in parent', rule, parent)
+      return
+    }
+    parent.deleteRule(rule)
   })
   console.log('GCed')
 }

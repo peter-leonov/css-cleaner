@@ -56,27 +56,19 @@ function getEffectiveRules () {
 }
 var $effectiveRules = getEffectiveRules()
 
-var $snapshots = []
-
-var seenEffectiveRules = new Map()
 function catchMoreRules () {
   console.log('adding rules…')
-  var used =
-    $effectiveRules
-    .filter(s => !seenEffectiveRules.get(s))
+  var was = $usedRules.size
+  $effectiveRules
+    .filter(s => !isUsed(s)) // revise not yet used rules
     .filter(s => document.querySelector(s.selector))
-    .each(s => seenEffectiveRules.set(s, true))
-  $snapshots.push(used)
-  console.log('added', used.length)
+    .each(s => markAsUsed(s.rule))
+  console.log('added', $usedRules.size - was)
 }
 
 
 function gcRules () {
   console.log('GCing rules…')
-  $snapshots
-    .flatten()
-    .map(s => s.rule)
-    .each(rule => markAsUsed(rule))
 
   $allStyleRules.each(rule => {
     if (isUsed(rule))

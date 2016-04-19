@@ -45,18 +45,6 @@ function Rules () {
       .filter(rule => rule) // remove nulls
   }
 
-  function renderRules () {
-    var css = ''
-    Array.from(document.styleSheets).each(ss => {
-      css += '/* ' + (ss.href || '.') +' */\n'
-      Array.from(ss.cssRules || []).each(rule => {
-        css += rule.cssText + '\n'
-      })
-      css += '\n'
-    })
-    return css
-  }
-
   // caching part
   this.allStyleRules = function () {
     if (this._allStyleRules)
@@ -79,16 +67,17 @@ function Rules () {
     return this.usedRules.get(rule)
   }
   this.catchMoreRules = function () {
-    console.log('adding rules…')
+    console.time('Rules.catchMoreRules()')
     var was = this.usedRules.size
     this.effectiveRules()
       .filter(s => !this.isUsed(s)) // revise not yet used rules
       .filter(s => document.querySelector(s.selector))
       .each(s => this.markAsUsed(s.rule))
+    console.timeEnd('Rules.catchMoreRules()')
     console.log('added', this.usedRules.size - was)
   }
-  this.gcRules = function () {
-    console.log('GCing rules…')
+  this.removeNotUsedRules = function () {
+    console.time('Rules.removeNotUsedRules()')
     this.allStyleRules().each(rule => {
       if (this.isUsed(rule))
         return
@@ -103,7 +92,7 @@ function Rules () {
       }
       parent.deleteRule(index)
     })
-    console.log('GCed')
+    console.timeEnd('Rules.removeNotUsedRules()')
   }
 }
 
@@ -115,7 +104,7 @@ function States () {
     states.push(document.documentElement.cloneNode(true))
     console.timeEnd('states.save()')
   }
-  this.playBack = function (f) {
+  this.playBack = function (f, done) {
     function replaceDocumentElement (node) {
       var de = document.documentElement
       if (!de)
@@ -126,7 +115,7 @@ function States () {
     function walk () {
       var state = $domStates.shift()
       if (!state)
-        return // job is done
+        return done() // job is done
       replaceDocumentElement(state)
       f()
       // prevent the script from hanging the browser
@@ -135,9 +124,31 @@ function States () {
   }
 }
 
+function Mutations (f) {
+  var observer = new MutationObserver(f)
+  this.start = function () {
+    observer.observe(document, { childList: true, attributes: true, subtree: true });
+    console.log('started watching mutations')
+  }
+  this.stop = function () {
+    observer.disconnect()
+    console.log('stopped watching mutations')
+  }
+}
 
-function downloadRules ()
-{
+function downloadPageCSS () {
+  function stringifyPageRules () {
+    var css = ''
+    Array.from(document.styleSheets).each(ss => {
+      css += '/* ' + (ss.href || '.') +' */\n'
+      Array.from(ss.cssRules || []).each(rule => {
+        css += rule.cssText + '\n'
+      })
+      css += '\n'
+    })
+    return css
+  }
+
   function downloadURI(uri, name) {
     var link = document.createElement("a");
     link.download = name;
@@ -145,33 +156,38 @@ function downloadRules ()
     link.click();
   }
 
-  console.log('download rules')
-  gcRules()
-  var css = renderRules()
+  var css = stringifyPageRules()
   downloadURI('data:text/css,' + escape(css), 'style.css')
 }
 
 
-var $mutationObserver = new MutationObserver(function (mutations) { saveDOMState() })
-function startWatchingMutations () {
-  $mutationObserver.observe(document, { childList: true, attributes: true, subtree: true });
-  console.log('started watching mutations')
-}
-function stopWatchingMutations () {
-  $mutationObserver.disconnect()
-  console.log('stopped watching mutations')
-}
+function bindUI () {
 
-window.addEventListener('keypress', e => {
-  if (!e.altKey)
-    return
+  var $states = new States()
 
-  if (e.code == 'KeyD')
-    saveDOMState()  
-  else if (e.code == 'KeyA')
-    startWatchingMutations()
-  else if (e.code == 'KeyS')
-    playBack()
-})
+  function runRulesChecker () {
+    var rules = new Rules()
+    $states.playBack(
+      function () { rules.catchMoreRules() },
+      function () {
+        rules.removeNotUsedRules()
+        downloadPageCSS()
+      }
+    )
+  }
+
+  window.addEventListener('keypress', e => {
+    if (!e.altKey)
+      return
+
+    if (e.code == 'KeyD')
+      $states.save()
+    else if (e.code == 'KeyA')
+      new Mutations(function () { $states.save() }).start()
+    else if (e.code == 'KeyS')
+      runRulesChecker()
+  })
+}
+bindUI()
 
 }()

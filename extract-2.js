@@ -3,6 +3,15 @@
 !function () {
 
 function Rules () {
+  // stateful part
+  var usedRules = new Map()
+  function markAsUsed (rule) {
+    usedRules.set(rule, true)
+  }
+  function isUsed (rule) {
+    return usedRules.get(rule)
+  }
+
   function walkRules (rules) {
     var result = []
     if (!rules)
@@ -57,29 +66,20 @@ function Rules () {
     return this._effectiveRules = getEffectiveRulesOf(this.allStyleRules())
   }
 
-  // stateful part
-
-  this.usedRules = new Map()
-  this.markAsUsed = function (rule) {
-    this.usedRules.set(rule, true)
-  }
-  this.isUsed = function (rule) {
-    return this.usedRules.get(rule)
-  }
   this.catchMoreRules = function () {
     console.time('Rules.catchMoreRules()')
     var was = this.usedRules.size
     this.effectiveRules()
-      .filter(s => !this.isUsed(s)) // revise not yet used rules
+      .filter(s => !isUsed(s)) // revise not yet used rules
       .filter(s => document.querySelector(s.selector))
-      .each(s => this.markAsUsed(s.rule))
+      .each(s => markAsUsed(s.rule))
     console.timeEnd('Rules.catchMoreRules()')
     console.log('added', this.usedRules.size - was)
   }
   this.removeNotUsedRules = function () {
     console.time('Rules.removeNotUsedRules()')
     this.allStyleRules().each(rule => {
-      if (this.isUsed(rule))
+      if (isUsed(rule))
         return
       var parent = rule.parentRule || rule.parentStyleSheet
       if (!parent) // already deleted
@@ -107,13 +107,12 @@ function States () {
   this.playBack = function (f, done) {
     function replaceDocumentElement (node) {
       var de = document.documentElement
-      if (!de)
-        return
-      document.removeChild(de)
+      if (de)
+        document.removeChild(de)
       document.appendChild(node)
     }
     function walk () {
-      var state = $domStates.shift()
+      var state = states.shift()
       if (!state)
         return done() // job is done
       replaceDocumentElement(state)
@@ -121,6 +120,7 @@ function States () {
       // prevent the script from hanging the browser
       window.setTimeout(walk, 10)
     }
+    walk()
   }
 }
 
@@ -181,6 +181,7 @@ function bindUI () {
   var $states = new States()
 
   function runRulesChecker () {
+    $mutations.stopRecording()
     var rules = new Rules()
     $states.playBack(
       function () { rules.catchMoreRules() },

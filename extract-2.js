@@ -126,11 +126,25 @@ function States () {
 
 function Mutations (f) {
   var observer = new MutationObserver(f)
-  this.start = function () {
+  this.recording = false
+  this.toggleRecording = function () {
+    if (this.recording) {
+      this.stopRecording()
+      this.recording = false
+    } else {
+      this.startRecording()
+      this.recording = true
+    }
+  }
+  this.startRecording = function () {
+    if (this.recording)
+      return
     observer.observe(document, { childList: true, attributes: true, subtree: true });
     console.log('started watching mutations')
   }
-  this.stop = function () {
+  this.stopRecording = function () {
+    if (!this.recording)
+      return
     observer.disconnect()
     console.log('stopped watching mutations')
   }
@@ -163,6 +177,7 @@ function downloadPageCSS () {
 
 function bindUI () {
 
+  var $mutations = new Mutations(function () { $states.save() })
   var $states = new States()
 
   function runRulesChecker () {
@@ -180,11 +195,11 @@ function bindUI () {
     if (!e.altKey)
       return
 
-    if (e.code == 'KeyD')
+    if (e.code == 'KeyA') // add state
       $states.save()
-    else if (e.code == 'KeyA')
-      new Mutations(function () { $states.save() }).start()
-    else if (e.code == 'KeyS')
+    else if (e.code == 'KeyR') // record
+      $mutations.toggleRecording()
+    else if (e.code == 'KeyD') // download result
       runRulesChecker()
   })
 }

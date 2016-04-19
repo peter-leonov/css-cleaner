@@ -1,102 +1,113 @@
 // based on AuditRules.js from Chrome Dev Tools
 
-// sorry for the PHP-style code, I promise to use functional programming next time ;)
-
 !function () {
 
-function walkRules (rules) {
-  var result = []
-  if (!rules)
-    return result
-  for (var i = 0; i < rules.length; i++) {
-    var rule = rules[i]
-    result.push(rule)
-    if (rule.type == 4) {
-      result = result.concat(walkRules(Array.from(rule.cssRules)))
-      continue
-    }
-  }
-  return result
-}
-
-var $allRulesOfAllTypes =
-  Array.from(document.styleSheets)
-  .map(sheet => walkRules(sheet.cssRules))
-  .flatten() // replace with reduce for production
-
-var $allStyleRules = $allRulesOfAllTypes.filter(r => r.type == 1)
-
-var $usedRules = new Map()
-function markAsUsed (rule) {
-  $usedRules.set(rule, true)
-}
-function isUsed (rule) {
-  return $usedRules.get(rule)
-}
-
-function getEffectiveRules () {
-  return $allStyleRules
-    .map(rule => {
-      var effectiveSelector = rule.selectorText.replace(/::?(?:[\w-]+)(?:\(.*?\))?/g, "")
-      try {
-        // try use maybe corrupted effective selector
-        document.querySelector(effectiveSelector)
-      } catch (e) {
-        console.log('corrupted effective selector', [effectiveSelector], ' of original ', [rule.selectorText],', error:', e)
-        console.log('full rule is:', rule.cssText)
-        // better mark the original as used than loose it
-        markAsUsed(rule)
-        return null
+function Rules () {
+  function walkRules (rules) {
+    var result = []
+    if (!rules)
+      return result
+    for (var i = 0; i < rules.length; i++) {
+      var rule = rules[i]
+      result.push(rule)
+      if (rule.type == 4) {
+        result = result.concat(walkRules(Array.from(rule.cssRules)))
+        continue
       }
-      // cutting preudos went well, use effective selector
-      return {rule: rule, selector: effectiveSelector}
-    })
-    .filter(rule => rule) // remove nulls
-
-}
-var $effectiveRules = getEffectiveRules()
-
-function catchMoreRules () {
-  console.log('adding rules…')
-  var was = $usedRules.size
-  $effectiveRules
-    .filter(s => !isUsed(s)) // revise not yet used rules
-    .filter(s => document.querySelector(s.selector))
-    .each(s => markAsUsed(s.rule))
-  console.log('added', $usedRules.size - was)
-}
-
-
-function gcRules () {
-  console.log('GCing rules…')
-
-  $allStyleRules.each(rule => {
-    if (isUsed(rule))
-      return
-    var parent = rule.parentRule || rule.parentStyleSheet
-    if (!parent) // already deleted
-      return
-    var index = Array.from(parent.cssRules).indexOf(rule)
-    if (index == -1)
-    {
-      console.log('cant find rule in parent', rule, parent)
-      return
     }
-    parent.deleteRule(index)
-  })
-  console.log('GCed')
-}
-function renderRules () {
-  var css = ''
-  Array.from(document.styleSheets).each(ss => {
-    css += '/* ' + (ss.href || '.') +' */\n'
-    Array.from(ss.cssRules || []).each(rule => {
-      css += rule.cssText + '\n'
+    return result
+  }
+
+  function getAllStyleRules () {
+    return Array.from(document.styleSheets)
+      .map(sheet => walkRules(sheet.cssRules))
+      .flatten() // replace with reduce for production
+      .filter(r => r.type == 1)
+  }
+
+  function getEffectiveRulesOf (rules) {
+    return rules
+      .map(rule => {
+        var effectiveSelector = rule.selectorText.replace(/::?(?:[\w-]+)(?:\(.*?\))?/g, "")
+        try {
+          // try use maybe corrupted effective selector
+          document.querySelector(effectiveSelector)
+        } catch (e) {
+          console.log('corrupted effective selector', [effectiveSelector], ' of original ', [rule.selectorText],', error:', e)
+          console.log('full rule is:', rule.cssText)
+          // better mark the original as used than loose it
+          markAsUsed(rule)
+          return null
+        }
+        // cutting pseudos went well, use effective selector
+        return {rule: rule, selector: effectiveSelector}
+      })
+      .filter(rule => rule) // remove nulls
+  }
+
+  function renderRules () {
+    var css = ''
+    Array.from(document.styleSheets).each(ss => {
+      css += '/* ' + (ss.href || '.') +' */\n'
+      Array.from(ss.cssRules || []).each(rule => {
+        css += rule.cssText + '\n'
+      })
+      css += '\n'
     })
-    css += '\n'
-  })
-  return css
+    return css
+  }
+
+  // caching part
+  this.allStyleRules = function () {
+    if (this._allStyleRules)
+      return this._allStyleRules
+    return this._allStyleRules = getAllStyleRules()
+  }
+  this.effectiveRules = function () {
+    if (this._effectiveRules)
+      return this._effectiveRules
+    return this._effectiveRules = getEffectiveRulesOf(this.allStyleRules())
+  }
+
+  // stateful part
+
+  this.usedRules = new Map()
+  this.markAsUsed = function (rule) {
+    this.usedRules.set(rule, true)
+  }
+  this.isUsed = function (rule) {
+    return this.usedRules.get(rule)
+  }
+  this.catchMoreRules = function () {
+    console.log('adding rules…')
+    var was = this.usedRules.size
+    this.effectiveRules()
+      .filter(s => !this.isUsed(s)) // revise not yet used rules
+      .filter(s => document.querySelector(s.selector))
+      .each(s => this.markAsUsed(s.rule))
+    console.log('added', this.usedRules.size - was)
+  }
+  this.gcRules = function () {
+    console.log('GCing rules…')
+    this.allStyleRules().each(rule => {
+      if (this.isUsed(rule))
+        return
+      var parent = rule.parentRule || rule.parentStyleSheet
+      if (!parent) // already deleted
+        return
+      var index = Array.from(parent.cssRules).indexOf(rule)
+      if (index == -1)
+      {
+        console.warn('cant find rule in parent', rule, parent)
+        return
+      }
+      parent.deleteRule(index)
+    })
+    console.log('GCed')
+  }
 }
+
+
 
 function downloadRules ()
 {

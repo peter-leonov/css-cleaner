@@ -113,22 +113,53 @@ function downloadRules ()
   downloadURI('data:text/css,' + escape(css), 'style.css')
 }
 
+
+var $domStates = []
+function saveDOMState () {
+  console.time('saveDOMState')
+  $domStates.push(document.documentElement.cloneNode(true))
+  console.timeEnd('saveDOMState')
+}
+function playBackStates (f) {
+  function replaceDocumentElement (node) {
+    var de = document.documentElement
+    if (!de)
+      return
+    document.removeChild(de)
+    document.appendChild(node)
+  }
+  function walk () {
+    var state = $domStates.shift()
+    if (!state)
+      return // job is done
+    replaceDocumentElement(state)
+    f()
+    // prevent the script from hanging the browser
+    window.setTimeout(walk, 10)
+  }
+}
+
+
+var $mutationObserver = new MutationObserver(function (mutations) { saveDOMState() })
+function startWatchingMutations () {
+  $mutationObserver.observe(document, { childList: true, attributes: true, subtree: true });
+  console.log('started watching mutations')
+}
+function stopWatchingMutations () {
+  $mutationObserver.disconnect()
+  console.log('stopped watching mutations')
+}
+
 window.addEventListener('keypress', e => {
   if (!e.altKey)
     return
 
   if (e.code == 'KeyD')
-    catchMoreRules()  
+    saveDOMState()  
+  else if (e.code == 'KeyA')
+    startWatchingMutations()
   else if (e.code == 'KeyS')
-    downloadRules()
+    playBack()
 })
-
-new MutationObserver(function(mutations) {
-  catchMoreRules()
-}).observe(document, { childList: true, attributes: true, subtree: true });
-
-// new MutationObserver(function(mutations) {
-//   console.log(mutations[0])
-// }).observe(document.documentElement, { childList: true, attributes: true, subtree: true });
 
 }()

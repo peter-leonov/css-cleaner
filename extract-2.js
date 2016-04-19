@@ -107,6 +107,33 @@ function Rules () {
   }
 }
 
+function States () {
+  var states = []
+
+  this.save = function () {
+    console.time('states.save()')
+    states.push(document.documentElement.cloneNode(true))
+    console.timeEnd('states.save()')
+  }
+  this.playBack = function (f) {
+    function replaceDocumentElement (node) {
+      var de = document.documentElement
+      if (!de)
+        return
+      document.removeChild(de)
+      document.appendChild(node)
+    }
+    function walk () {
+      var state = $domStates.shift()
+      if (!state)
+        return // job is done
+      replaceDocumentElement(state)
+      f()
+      // prevent the script from hanging the browser
+      window.setTimeout(walk, 10)
+    }
+  }
+}
 
 
 function downloadRules ()
@@ -122,32 +149,6 @@ function downloadRules ()
   gcRules()
   var css = renderRules()
   downloadURI('data:text/css,' + escape(css), 'style.css')
-}
-
-
-var $domStates = []
-function saveDOMState () {
-  console.time('saveDOMState')
-  $domStates.push(document.documentElement.cloneNode(true))
-  console.timeEnd('saveDOMState')
-}
-function playBackStates (f) {
-  function replaceDocumentElement (node) {
-    var de = document.documentElement
-    if (!de)
-      return
-    document.removeChild(de)
-    document.appendChild(node)
-  }
-  function walk () {
-    var state = $domStates.shift()
-    if (!state)
-      return // job is done
-    replaceDocumentElement(state)
-    f()
-    // prevent the script from hanging the browser
-    window.setTimeout(walk, 10)
-  }
 }
 
 

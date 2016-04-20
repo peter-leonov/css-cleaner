@@ -66,15 +66,23 @@ function Rules () {
     return this._effectiveRules = getEffectiveRulesOf(this.allStyleRules())
   }
 
-  this.catchMoreRules = function () {
+  this.catchMoreRules = function (documentElement) {
     console.time('Rules.catchMoreRules()')
-    var was = this.usedRules.size
+    var was = usedRules.size
     this.effectiveRules()
       .filter(s => !isUsed(s)) // revise not yet used rules
-      .filter(s => document.querySelector(s.selector))
+      .filter(s => documentElement.querySelector(s.selector))
       .each(s => markAsUsed(s.rule))
     console.timeEnd('Rules.catchMoreRules()')
-    console.log('added', this.usedRules.size - was)
+    console.log('added', usedRules.size - was)
+  }
+  this.saveUsedRules = function () {
+    var persistent = JSON.parse(window.localStorage.getItem('css-gc') || '{}')
+    this.allStyleRules().filter(rule => !isUsed(rule)).each(rule => {
+      persistent[rule.rule.selectorText] = true
+    })
+    window.localStorage.setItem('css-gc', JSON.stringify(persistent))
+    console.log(JSON.stringify(persistent))
   }
   this.removeNotUsedRules = function () {
     console.time('Rules.removeNotUsedRules()')
@@ -101,22 +109,16 @@ function States () {
 
   this.save = function () {
     console.time('states.save()')
+    console.log('html length', document.documentElement.innerHTML.length)
     states.push(document.documentElement.cloneNode(true))
     console.timeEnd('states.save()')
   }
   this.playBack = function (f, done) {
-    function replaceDocumentElement (node) {
-      var de = document.documentElement
-      if (de)
-        document.removeChild(de)
-      document.appendChild(node)
-    }
     function walk () {
       var state = states.shift()
       if (!state)
         return done() // job is done
-      replaceDocumentElement(state)
-      f()
+      f(state)
       // prevent the script from hanging the browser
       window.setTimeout(walk, 10)
     }
@@ -179,17 +181,21 @@ function bindUI () {
 
   var $mutations = new Mutations(function () { $states.save() })
   var $states = new States()
+  var $rules = new Rules()
 
-  function runRulesChecker () {
-    $mutations.stopRecording()
-    var rules = new Rules()
+  function calculateAndSaveUsedRules () {
     $states.playBack(
-      function () { rules.catchMoreRules() },
+      function (documentElement) { rules.catchMoreRules(documentElement) },
       function () {
-        rules.removeNotUsedRules()
-        downloadPageCSS()
+        $rules.saveUsedRules()
+        console.log('saved!')
       }
     )
+  }
+
+  function downloadUsedRules () {
+    $rules.removeNotUsedRules()
+    downloadPageCSS()
   }
 
   window.addEventListener('keypress', e => {
@@ -200,8 +206,10 @@ function bindUI () {
       $states.save()
     else if (e.code == 'KeyR') // record
       $mutations.toggleRecording()
+    else if (e.code == 'KeyS') // download result
+      calculateAndSaveUsedRules()
     else if (e.code == 'KeyD') // download result
-      runRulesChecker()
+      downloadUsedRules()
   })
 }
 bindUI()

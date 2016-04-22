@@ -78,16 +78,16 @@ function Rules () {
   }
   this.saveUsedRules = function () {
     var persistent = JSON.parse(window.localStorage.getItem('css-gc') || '{}')
-    this.allStyleRules().filter(rule => !isUsed(rule)).each(rule => {
-      persistent[rule.rule.selectorText] = true
+    this.allStyleRules().filter(rule => isUsed(rule)).each(rule => {
+      persistent[rule.selectorText] = true
     })
     window.localStorage.setItem('css-gc', JSON.stringify(persistent))
-    console.log(JSON.stringify(persistent))
   }
   this.removeNotUsedRules = function () {
     console.time('Rules.removeNotUsedRules()')
+    var persistent = JSON.parse(window.localStorage.getItem('css-gc') || '{}')
     this.allStyleRules().each(rule => {
-      if (isUsed(rule))
+      if (persistent[rule.selectorText])
         return
       var parent = rule.parentRule || rule.parentStyleSheet
       if (!parent) // already deleted
@@ -109,7 +109,6 @@ function States () {
 
   this.save = function () {
     console.time('states.save()')
-    console.log('html length', document.documentElement.innerHTML.length)
     states.push(document.documentElement.cloneNode(true))
     console.timeEnd('states.save()')
   }
@@ -185,7 +184,7 @@ function bindUI () {
 
   function calculateAndSaveUsedRules () {
     $states.playBack(
-      function (documentElement) { rules.catchMoreRules(documentElement) },
+      function (documentElement) { $rules.catchMoreRules(documentElement) },
       function () {
         $rules.saveUsedRules()
         console.log('saved!')
